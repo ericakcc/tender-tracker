@@ -36,7 +36,7 @@ class MlwmlwSource(TenderSource):
         Returns:
             List of parsed tenders.
         """
-        date_str = target_date.strftime("%Y%m%d")
+        date_str = target_date.strftime("%Y-%m-%d")
         logger.info("Fetching tenders for date {} from mlwmlw", date_str)
 
         try:
@@ -120,13 +120,13 @@ class MlwmlwSource(TenderSource):
                 tender_id=str(tender_id),
                 title=item.get("name", ""),
                 org_name=item.get("unit") or item.get("org_name", ""),
-                procurement_type=item.get("type", ""),
-                tender_method=item.get("method", ""),
+                procurement_type=item.get("category", ""),
+                tender_method=item.get("type", ""),
                 budget_amount=budget,
                 deadline=deadline,
                 open_date=open_date,
                 url=url,
-                category=item.get("category", ""),
+                category=item.get("sub_category", ""),
                 source="mlwmlw",
             )
         except Exception as e:
