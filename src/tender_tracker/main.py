@@ -1,6 +1,7 @@
 """CLI entry point using click + rich."""
 
 import asyncio
+import csv
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -10,13 +11,13 @@ from rich.console import Console
 
 from tender_tracker.config import load_config
 from tender_tracker.evaluator import TenderEvaluator
-from tender_tracker.filters import TenderFilter
-from tender_tracker.models import Tender
+from tender_tracker.models import Tender, TenderEvaluation
 from tender_tracker.reports import (
     render_evaluation_table,
     render_stats,
     render_tender_table,
 )
+from tender_tracker.sources.ebuying import EbuyingSource
 from tender_tracker.sources.mlwmlw import MlwmlwSource
 from tender_tracker.storage import TenderStorage
 
@@ -64,22 +65,25 @@ def cli(ctx: click.Context, config_path: Path | None, db_path: Path | None, verb
 @click.pass_context
 def fetch(ctx: click.Context, target_date: date | None, days: int) -> None:
     """Fetch latest tenders and save to database."""
-    config = ctx.obj["config"]
     storage: TenderStorage = ctx.obj["storage"]
-    tender_filter = TenderFilter(config)
 
     start_date = target_date.date() if target_date else date.today()
 
     async def _fetch() -> list[Tender]:
-        source = MlwmlwSource()
+        mlwmlw = MlwmlwSource()
+        ebuying = EbuyingSource()
         all_tenders: list[Tender] = []
         try:
             for i in range(days):
                 d = start_date - timedelta(days=i)
-                tenders = await source.fetch_by_date(d)
-                all_tenders.extend(tenders)
+                mlwmlw_result, ebuying_result = await asyncio.gather(
+                    mlwmlw.fetch_by_date(d),
+                    ebuying.fetch_by_date(d),
+                )
+                all_tenders.extend(mlwmlw_result)
+                all_tenders.extend(ebuying_result)
         finally:
-            await source.close()
+            await asyncio.gather(mlwmlw.close(), ebuying.close())
         return all_tenders
 
     with console.status("[bold green]正在抓取標案資料..."):
@@ -89,19 +93,13 @@ def fetch(ctx: click.Context, target_date: date | None, days: int) -> None:
         console.print("[yellow]未找到任何標案。[/yellow]")
         return
 
-    # Apply keyword filter for pre-screening
-    filtered = tender_filter.keyword_filter(all_tenders)
-    new_count = storage.upsert_tenders(filtered)
-    storage.log_sync("mlwmlw", len(filtered), "success")
+    new_count = storage.upsert_tenders(all_tenders)
+    storage.log_sync("mlwmlw+ebuying", len(all_tenders), "success")
 
-    console.print(
-        f"[green]抓取完成：[/green]共 {len(all_tenders)} 筆，"
-        f"關鍵字篩選後 {len(filtered)} 筆，"
-        f"新增 {new_count} 筆。"
-    )
+    console.print(f"[green]抓取完成：[/green]共 {len(all_tenders)} 筆，新增 {new_count} 筆。")
 
-    if filtered:
-        render_tender_table(filtered[:20], title="最新標案（前 20 筆）")
+    if all_tenders:
+        render_tender_table(all_tenders[:20], title="最新標案（前 20 筆）")
 
 
 @cli.command()
@@ -109,14 +107,20 @@ def fetch(ctx: click.Context, target_date: date | None, days: int) -> None:
 @click.pass_context
 def search(ctx: click.Context, keyword: str) -> None:
     """Search tenders by keyword."""
+    config = ctx.obj["config"]
     storage: TenderStorage = ctx.obj["storage"]
 
     async def _search() -> list[Tender]:
-        source = MlwmlwSource()
+        mlwmlw = MlwmlwSource()
+        ebuying = EbuyingSource(categories=config.ebuying_categories)
         try:
-            return await source.search(keyword)
+            mlwmlw_result, ebuying_result = await asyncio.gather(
+                mlwmlw.search(keyword),
+                ebuying.search(keyword),
+            )
+            return mlwmlw_result + ebuying_result
         finally:
-            await source.close()
+            await asyncio.gather(mlwmlw.close(), ebuying.close())
 
     with console.status(f"[bold green]搜尋「{keyword}」..."):
         tenders = asyncio.run(_search())
@@ -166,11 +170,11 @@ def evaluate(ctx: click.Context, limit: int) -> None:
     console.print(f"[cyan]將評估 {len(tenders)} 筆標案...[/cyan]")
 
     evaluator = TenderEvaluator()
-    results = []
+    results: list[tuple[Tender, TenderEvaluation]] = []
 
     for tender in tenders:
         with console.status(f"[bold green]評估中：{tender.title[:30]}..."):
-            tender_eval = evaluator.evaluate(tender)
+            tender_eval = asyncio.run(evaluator.evaluate(tender))
             storage.save_evaluation(tender.tender_id, tender_eval)
             results.append((tender, tender_eval))
 
@@ -211,6 +215,93 @@ def history(ctx: click.Context, days: int) -> None:
                 results.append((tender, evaluation))
         if results:
             render_evaluation_table(results, title="已評估標案")
+
+
+_ACTION_LABELS: dict[str, str] = {
+    "bid": "建議投標",
+    "skip": "略過",
+    "review_further": "需進一步評估",
+}
+
+_CSV_FIELDS = [
+    "案號",
+    "名稱",
+    "招標機關",
+    "採購類別",
+    "招標方式",
+    "預算金額",
+    "截止日期",
+    "開標日期",
+    "標的分類",
+    "資料來源",
+    "公告日期",
+    "抓取時間",
+    "連結",
+    "相關度",
+    "適合投標",
+    "建議行動",
+    "匹配能力",
+    "判斷理由",
+]
+
+
+@cli.command()
+@click.option(
+    "--output",
+    "-o",
+    "output_path",
+    type=click.Path(path_type=Path),
+    default="tenders_export.csv",
+    help="Output CSV file path",
+)
+@click.option("--days", type=int, default=None, help="Only export tenders from last N days")
+@click.option("--evaluated", is_flag=True, help="Only export evaluated tenders")
+@click.pass_context
+def export(ctx: click.Context, output_path: Path, days: int | None, evaluated: bool) -> None:
+    """Export tenders to CSV file."""
+    storage: TenderStorage = ctx.obj["storage"]
+    tenders = storage.list_tenders(days=days, limit=100_000, evaluated_only=evaluated)
+
+    with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
+        writer.writeheader()
+
+        for tender in tenders:
+            evaluation = storage.get_evaluation(tender.tender_id)
+
+            row: dict[str, str] = {
+                "案號": tender.tender_id,
+                "名稱": tender.title,
+                "招標機關": tender.org_name,
+                "採購類別": tender.procurement_type,
+                "招標方式": tender.tender_method,
+                "預算金額": str(tender.budget_amount) if tender.budget_amount is not None else "",
+                "截止日期": tender.deadline.strftime("%Y/%m/%d") if tender.deadline else "",
+                "開標日期": tender.open_date.strftime("%Y/%m/%d") if tender.open_date else "",
+                "標的分類": tender.category,
+                "資料來源": tender.source,
+                "公告日期": tender.publish_date.strftime("%Y/%m/%d") if tender.publish_date else "",
+                "抓取時間": tender.fetched_at.strftime("%Y/%m/%d %H:%M"),
+                "連結": tender.url,
+                "相關度": "",
+                "適合投標": "",
+                "建議行動": "",
+                "匹配能力": "",
+                "判斷理由": "",
+            }
+
+            if evaluation:
+                row["相關度"] = str(evaluation.relevance_score)
+                row["適合投標"] = "是" if evaluation.suitable else "否"
+                row["建議行動"] = _ACTION_LABELS.get(
+                    evaluation.recommended_action, evaluation.recommended_action
+                )
+                row["匹配能力"] = ", ".join(evaluation.matched_capabilities)
+                row["判斷理由"] = evaluation.reasoning
+
+            writer.writerow(row)
+
+    console.print(f"[green]已匯出 {len(tenders)} 筆標案至 {output_path}[/green]")
 
 
 if __name__ == "__main__":

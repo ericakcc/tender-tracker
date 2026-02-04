@@ -39,13 +39,19 @@ schedule:
   fetch_interval: "0 9,14 * * 1-5"  # 排程（參考用）
 ```
 
-### 環境變數
+### Claude Code CLI
 
-`evaluate` 指令需要 Claude API：
+`evaluate` 指令透過 [Claude Agent SDK](https://github.com/anthropics/claude-code/tree/main/packages/agent-sdk) 執行，需要已安裝並認證 Claude Code CLI：
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+# 安裝 Claude Code CLI（若尚未安裝）
+npm install -g @anthropic-ai/claude-code
+
+# 確認已登入（使用 Claude Code 訂閱）
+claude
 ```
+
+不需要額外設定 `ANTHROPIC_API_KEY` 環境變數。
 
 ## 指令
 

@@ -25,6 +25,7 @@ def sample_tender() -> Tender:
         url="https://example.com/tender/001",
         category="資訊服務",
         source="mlwmlw",
+        publish_date=datetime(2026, 1, 15),
         fetched_at=datetime(2026, 2, 1),
     )
 

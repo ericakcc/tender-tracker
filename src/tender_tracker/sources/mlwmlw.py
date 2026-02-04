@@ -109,6 +109,7 @@ class MlwmlwSource(TenderSource):
                 except (ValueError, TypeError):
                     budget = None
 
+            publish_date = _parse_date(item.get("publish"))
             deadline = _parse_date(item.get("endDate") or item.get("end_date"))
             open_date = _parse_date(item.get("openDate") or item.get("open_date"))
 
@@ -128,6 +129,7 @@ class MlwmlwSource(TenderSource):
                 url=url,
                 category=item.get("sub_category", ""),
                 source="mlwmlw",
+                publish_date=publish_date,
             )
         except Exception as e:
             logger.debug("Failed to parse tender item: {}", e)
@@ -138,9 +140,11 @@ def _parse_date(value: str | None) -> datetime | None:
     """Attempt to parse a date string in various formats."""
     if not value:
         return None
+    # Handle ISO format with timezone (e.g. "2026-01-20T00:00:00.000Z")
+    cleaned = value.split("T")[0].strip()
     for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%Y%m%d"):
         try:
-            return datetime.strptime(value, fmt)
+            return datetime.strptime(cleaned, fmt)
         except ValueError:
             continue
     return None

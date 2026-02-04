@@ -43,5 +43,8 @@ budget:
 procurement_types:
   - 勞務
 
+ebuying_categories:
+  - "226"
+
 schedule:
   fetch_interval: "0 9,14 * * 1-5"

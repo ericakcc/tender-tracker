@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tenders (
     url TEXT DEFAULT '',
     category TEXT DEFAULT '',
     source TEXT NOT NULL,
+    publish_date TEXT,
     fetched_at TEXT NOT NULL
 );
 
@@ -65,6 +66,12 @@ class TenderStorage:
         """Initialize database schema."""
         conn = self._get_conn()
         conn.executescript(_SCHEMA)
+        # Migrate existing DBs: add publish_date column if missing
+        try:
+            conn.execute("ALTER TABLE tenders ADD COLUMN publish_date TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         conn.commit()
         logger.debug("Database initialized at {}", self._db_path)
 
@@ -101,6 +108,7 @@ class TenderStorage:
             "url": tender.url,
             "category": tender.category,
             "source": tender.source,
+            "publish_date": tender.publish_date.isoformat() if tender.publish_date else None,
             "fetched_at": tender.fetched_at.isoformat(),
         }
 
@@ -300,5 +308,6 @@ def _row_to_tender(row: sqlite3.Row) -> Tender:
         url=row["url"],
         category=row["category"],
         source=row["source"],
+        publish_date=datetime.fromisoformat(row["publish_date"]) if row["publish_date"] else None,
         fetched_at=datetime.fromisoformat(row["fetched_at"]),
     )

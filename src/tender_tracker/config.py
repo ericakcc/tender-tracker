@@ -28,6 +28,7 @@ class AppConfig(BaseModel):
     orgs: list[str] = Field(default_factory=list)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     procurement_types: list[str] = Field(default_factory=lambda: ["勞務"])
+    ebuying_categories: list[str] = Field(default_factory=lambda: ["226"])
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
 
 

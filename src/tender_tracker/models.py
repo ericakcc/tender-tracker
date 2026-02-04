@@ -36,6 +36,7 @@ class Tender(BaseModel):
     url: str = Field(default="", description="標案連結")
     category: str = Field(default="", description="標的分類")
     source: str = Field(description="資料來源")
+    publish_date: datetime | None = Field(default=None, description="公告日期")
     fetched_at: datetime = Field(default_factory=datetime.now, description="抓取時間")
 
 
