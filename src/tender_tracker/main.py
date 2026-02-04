@@ -153,8 +153,9 @@ def list_tenders(ctx: click.Context, days: int | None, limit: int, evaluated: bo
 
 @cli.command()
 @click.option("--limit", type=int, default=10, help="Max tenders to evaluate")
+@click.option("--concurrency", "-c", type=int, default=20, help="Max parallel evaluations")
 @click.pass_context
-def evaluate(ctx: click.Context, limit: int) -> None:
+def evaluate(ctx: click.Context, limit: int, concurrency: int) -> None:
     """Evaluate unevaluated tenders using Claude AI."""
     storage: TenderStorage = ctx.obj["storage"]
 
@@ -170,13 +171,14 @@ def evaluate(ctx: click.Context, limit: int) -> None:
     console.print(f"[cyan]將評估 {len(tenders)} 筆標案...[/cyan]")
 
     evaluator = TenderEvaluator()
-    results: list[tuple[Tender, TenderEvaluation]] = []
 
-    for tender in tenders:
-        with console.status(f"[bold green]評估中：{tender.title[:30]}..."):
-            tender_eval = asyncio.run(evaluator.evaluate(tender))
-            storage.save_evaluation(tender.tender_id, tender_eval)
-            results.append((tender, tender_eval))
+    def _save(tender: Tender, tender_eval: TenderEvaluation) -> None:
+        storage.save_evaluation(tender.tender_id, tender_eval)
+
+    with console.status(f"[bold green]平行評估中（並發 {concurrency}）..."):
+        results = asyncio.run(
+            evaluator.evaluate_batch(tenders, concurrency=concurrency, on_result=_save)
+        )
 
     render_evaluation_table(results)
 

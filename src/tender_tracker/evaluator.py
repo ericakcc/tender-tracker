@@ -1,5 +1,8 @@
 """AI-powered tender evaluation using Claude Agent SDK with structured output."""
 
+import asyncio
+from collections.abc import Callable
+
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 from loguru import logger
 
@@ -46,7 +49,10 @@ SYSTEM_PROMPT = f"""你是一位專業的政府標案分析師，負責評估標
 1. 此標案與團隊能力的匹配度（0.0 ~ 1.0）
 2. 是否建議投標（bid / skip / review_further）
 3. 匹配到哪些團隊能力
-4. 詳細的判斷理由
+4. 判斷理由（請依照以下格式，每項不超過 20 字）：
+   - 匹配點：與團隊哪些能力相關
+   - 風險點：主要疑慮或不適合原因
+   - 結論：一句話總結建議
 """
 
 EVALUATION_PROMPT = """請評估以下標案：
@@ -92,12 +98,13 @@ class TenderEvaluator:
         async for message in query(
             prompt=prompt,
             options=ClaudeAgentOptions(
+                model="claude-sonnet-4-5-20250929",
                 system_prompt=SYSTEM_PROMPT,
                 output_format={
                     "type": "json_schema",
                     "schema": TenderEvaluation.model_json_schema(),
                 },
-                max_turns=3,
+                max_turns=2,
                 allowed_tools=[],
             ),
         ):
@@ -121,28 +128,42 @@ class TenderEvaluator:
             matched_capabilities=[],
         )
 
-    async def evaluate_batch(self, tenders: list[Tender]) -> list[tuple[Tender, TenderEvaluation]]:
-        """Evaluate multiple tenders.
+    async def evaluate_batch(
+        self,
+        tenders: list[Tender],
+        concurrency: int = 20,
+        on_result: Callable[[Tender, TenderEvaluation], None] | None = None,
+    ) -> list[tuple[Tender, TenderEvaluation]]:
+        """Evaluate multiple tenders in parallel.
 
         Args:
             tenders: List of tenders to evaluate.
+            concurrency: Max number of parallel evaluations.
+            on_result: Optional callback invoked after each evaluation completes.
 
         Returns:
             List of (tender, evaluation) tuples.
         """
-        results: list[tuple[Tender, TenderEvaluation]] = []
-        for tender in tenders:
-            try:
-                evaluation = await self.evaluate(tender)
-                results.append((tender, evaluation))
-            except Exception as e:
-                logger.error("Failed to evaluate tender {}: {}", tender.tender_id, e)
-                fallback = TenderEvaluation(
-                    suitable=False,
-                    relevance_score=0.0,
-                    reasoning=f"Evaluation failed: {e}",
-                    recommended_action="review_further",
-                    matched_capabilities=[],
-                )
-                results.append((tender, fallback))
-        return results
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _eval(tender: Tender) -> tuple[Tender, TenderEvaluation]:
+            async with semaphore:
+                try:
+                    evaluation = await self.evaluate(tender)
+                    result = (tender, evaluation)
+                except Exception as e:
+                    logger.error("Failed to evaluate {}: {}", tender.tender_id, e)
+                    fallback = TenderEvaluation(
+                        suitable=False,
+                        relevance_score=0.0,
+                        reasoning=f"Evaluation failed: {e}",
+                        recommended_action="review_further",
+                        matched_capabilities=[],
+                    )
+                    result = (tender, fallback)
+                if on_result:
+                    on_result(*result)
+                return result
+
+        results = await asyncio.gather(*[_eval(t) for t in tenders])
+        return list(results)

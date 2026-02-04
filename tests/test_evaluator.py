@@ -1,5 +1,6 @@
 """Tests for the AI evaluator module."""
 
+import asyncio
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -110,7 +111,7 @@ class TestTenderEvaluator:
 
     @patch("tender_tracker.evaluator.query")
     @pytest.mark.asyncio
-    async def test_evaluate_batch(self, mock_query: MagicMock) -> None:
+    async def test_evaluate_batch_parallel(self, mock_query: MagicMock) -> None:
         eval_data = {
             "suitable": True,
             "relevance_score": 0.7,
@@ -119,21 +120,61 @@ class TestTenderEvaluator:
             "matched_capabilities": [],
         }
 
-        mock_query.return_value = _mock_query_factory(eval_data)
-
         evaluator = TenderEvaluator()
         tenders = [
             Tender(tender_id="T-001", title="AI test 1", source="mlwmlw"),
             Tender(tender_id="T-002", title="AI test 2", source="mlwmlw"),
+            Tender(tender_id="T-003", title="AI test 3", source="mlwmlw"),
         ]
 
         # Mock query to return fresh generator each call
         mock_query.side_effect = lambda **kwargs: _mock_query_factory(eval_data)
 
-        results = await evaluator.evaluate_batch(tenders)
-        assert len(results) == 2
+        results = await evaluator.evaluate_batch(tenders, concurrency=2)
+        assert len(results) == 3
         for tender, evaluation in results:
             assert isinstance(evaluation, TenderEvaluation)
+            assert evaluation.relevance_score == 0.7
+
+    @patch("tender_tracker.evaluator.query")
+    @pytest.mark.asyncio
+    async def test_evaluate_batch_respects_concurrency(self, mock_query: MagicMock) -> None:
+        """Verify concurrency limit is respected via semaphore."""
+        max_concurrent = 0
+        current_concurrent = 0
+        lock = asyncio.Lock()
+
+        eval_data = {
+            "suitable": True,
+            "relevance_score": 0.5,
+            "reasoning": "test",
+            "recommended_action": "bid",
+            "matched_capabilities": [],
+        }
+
+        original_factory = _mock_query_factory
+
+        async def _tracked_query(**kwargs: Any):  # noqa: ANN401
+            nonlocal max_concurrent, current_concurrent
+            async with lock:
+                current_concurrent += 1
+                max_concurrent = max(max_concurrent, current_concurrent)
+            await asyncio.sleep(0.05)
+            async for msg in original_factory(eval_data):
+                yield msg
+            async with lock:
+                current_concurrent -= 1
+
+        mock_query.side_effect = _tracked_query
+
+        evaluator = TenderEvaluator()
+        tenders = [
+            Tender(tender_id=f"T-{i:03d}", title=f"Test {i}", source="mlwmlw") for i in range(6)
+        ]
+
+        results = await evaluator.evaluate_batch(tenders, concurrency=2)
+        assert len(results) == 6
+        assert max_concurrent <= 2
 
     @patch("tender_tracker.evaluator.query")
     @pytest.mark.asyncio
