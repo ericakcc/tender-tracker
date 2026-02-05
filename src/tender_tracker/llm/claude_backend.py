@@ -7,42 +7,10 @@ from tender_tracker.llm.base import LLMBackend
 from tender_tracker.llm.config import LLMConfig
 from tender_tracker.models import Tender, TenderEvaluation
 
-TEAM_PROFILE = """光聚晶電聯合（Star Fusion Group）核心技術能力：
-
-1. AI / ML / Deep Learning 模型開發
-   - 大型語言模型 (LLM) 應用與微調
-   - 生成式 AI 應用開發
-   - 電腦視覺與影像辨識
-   - 自然語言處理 (NLP)
-
-2. 全端軟體開發
-   - Web 應用程式開發（前端 + 後端）
-   - API 設計與實作
-   - 雲端原生架構
-
-3. 資料工程與分析
-   - 資料平台建置
-   - 數據分析儀表板
-   - ETL 管線開發
-
-4. 遊戲技術
-   - 遊戲引擎技術（大宇資訊經驗）
-   - 互動式 3D 應用
-   - VR/AR 技術應用
-
-5. 資安（安瑞-KY）
-   - 資訊安全解決方案
-   - 資安稽核與顧問
-
-6. 支付系統（紅陽科技）
-   - 電子支付整合
-   - 金流系統開發
-"""
-
-SYSTEM_PROMPT = f"""你是一位專業的政府標案分析師，負責評估標案是否適合團隊投標。
+SYSTEM_PROMPT_TEMPLATE = """你是一位專業的政府標案分析師，負責評估標案是否適合團隊投標。
 
 以下是團隊的核心能力：
-{TEAM_PROFILE}
+{team_profile}
 
 請根據提供的標案資訊，評估此標案是否適合團隊投標。評估項目：
 1. 此標案與團隊能力的匹配度（0.0 ~ 1.0）
@@ -102,6 +70,7 @@ class ClaudeBackend(LLMBackend):
             config: LLM configuration (model name used from config).
         """
         self.config = config
+        self._system_prompt = SYSTEM_PROMPT_TEMPLATE.format(team_profile=config.team_profile)
         # Map common model aliases to Claude model IDs
         self._model = self._resolve_model(config.model)
 
@@ -139,7 +108,7 @@ class ClaudeBackend(LLMBackend):
             prompt=prompt,
             options=ClaudeAgentOptions(
                 model=self._model,
-                system_prompt=SYSTEM_PROMPT,
+                system_prompt=self._system_prompt,
                 output_format={
                     "type": "json_schema",
                     "schema": TenderEvaluation.model_json_schema(),

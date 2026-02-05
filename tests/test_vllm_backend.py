@@ -1,12 +1,14 @@
 """Tests for the vLLM backend module."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tender_tracker.llm import LLMConfig, get_backend
+from tender_tracker.llm.config import DEFAULT_TEAM_PROFILE
 from tender_tracker.llm.vllm_backend import (
-    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_TEMPLATE,
     VLLMBackend,
     format_evaluation_prompt,
 )
@@ -190,28 +192,68 @@ class TestGetBackend:
 
 
 class TestSystemPrompt:
-    """Tests for system prompt content."""
+    """Tests for system prompt template."""
 
-    def test_system_prompt_contains_team_capabilities(self) -> None:
-        """Verify system prompt includes team capabilities."""
-        assert "AI" in SYSTEM_PROMPT
-        assert "LLM" in SYSTEM_PROMPT
-        assert "NLP" in SYSTEM_PROMPT
-        assert "電腦視覺" in SYSTEM_PROMPT
-        assert "全端" in SYSTEM_PROMPT
-        assert "資料" in SYSTEM_PROMPT
-        assert "遊戲" in SYSTEM_PROMPT
-        assert "資安" in SYSTEM_PROMPT
-        assert "支付" in SYSTEM_PROMPT
+    def test_system_prompt_template_has_placeholder(self) -> None:
+        """Verify system prompt template has team_profile placeholder."""
+        assert "{team_profile}" in SYSTEM_PROMPT_TEMPLATE
 
-    def test_system_prompt_contains_evaluation_instructions(self) -> None:
-        """Verify system prompt includes evaluation instructions."""
-        assert "匹配度" in SYSTEM_PROMPT
-        assert "0.0" in SYSTEM_PROMPT
-        assert "1.0" in SYSTEM_PROMPT
-        assert "bid" in SYSTEM_PROMPT
-        assert "skip" in SYSTEM_PROMPT
-        assert "review_further" in SYSTEM_PROMPT
+    def test_system_prompt_template_contains_evaluation_instructions(self) -> None:
+        """Verify system prompt template includes evaluation instructions."""
+        assert "匹配度" in SYSTEM_PROMPT_TEMPLATE
+        assert "0.0" in SYSTEM_PROMPT_TEMPLATE
+        assert "1.0" in SYSTEM_PROMPT_TEMPLATE
+        assert "bid" in SYSTEM_PROMPT_TEMPLATE
+        assert "skip" in SYSTEM_PROMPT_TEMPLATE
+        assert "review_further" in SYSTEM_PROMPT_TEMPLATE
+
+    def test_system_prompt_formatted_with_team_profile(self) -> None:
+        """Verify system prompt can be formatted with custom team profile."""
+        custom_profile = "我們專精於 AI 和雲端技術"
+        formatted = SYSTEM_PROMPT_TEMPLATE.format(team_profile=custom_profile)
+        assert custom_profile in formatted
+        assert "{team_profile}" not in formatted
+
+
+class TestLLMConfigTeamProfile:
+    """Tests for team profile loading in LLMConfig."""
+
+    def test_default_team_profile(self) -> None:
+        """Test that default team profile is used when none specified."""
+        config = LLMConfig()
+        assert config.team_profile == DEFAULT_TEAM_PROFILE
+
+    def test_inline_team_profile(self) -> None:
+        """Test that inline team_profile is used."""
+        custom = "Custom team profile"
+        config = LLMConfig(team_profile=custom)
+        assert config.team_profile == custom
+
+    def test_team_profile_from_file(self, tmp_path: Path) -> None:
+        """Test loading team profile from external file."""
+        profile_content = "從檔案載入的團隊能力"
+        profile_file = tmp_path / "profile.txt"
+        profile_file.write_text(profile_content, encoding="utf-8")
+
+        config = LLMConfig(team_profile_path=str(profile_file))
+        assert config.team_profile == profile_content
+
+    def test_team_profile_file_not_found_uses_default(self) -> None:
+        """Test that missing file falls back to default."""
+        config = LLMConfig(team_profile_path="/nonexistent/path.txt")
+        assert config.team_profile == DEFAULT_TEAM_PROFILE
+
+    def test_team_profile_file_overrides_inline(self, tmp_path: Path) -> None:
+        """Test that file path takes precedence over inline profile."""
+        file_content = "File content"
+        profile_file = tmp_path / "profile.txt"
+        profile_file.write_text(file_content, encoding="utf-8")
+
+        config = LLMConfig(
+            team_profile="Inline content",
+            team_profile_path=str(profile_file),
+        )
+        assert config.team_profile == file_content
 
 
 @pytest.mark.integration

@@ -57,3 +57,4 @@ llm:
   api_key: EMPTY                     # API key (use EMPTY for local vLLM)
   max_retries: 3                     # Retries for structured output parsing
   temperature: 0.1                   # Sampling temperature (lower = deterministic)
+  team_profile_path: team_profile.txt # Path to team capabilities file (create your own)

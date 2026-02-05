@@ -10,3 +10,7 @@ wheels/
 .venv
 tenders.db
 *.csv
+
+# Private configuration (contains company-specific info)
+team_profile.txt
+docs/
