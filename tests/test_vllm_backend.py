@@ -1,6 +1,5 @@
 """Tests for the vLLM backend module."""
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -216,44 +215,18 @@ class TestSystemPrompt:
 
 
 class TestLLMConfigTeamProfile:
-    """Tests for team profile loading in LLMConfig."""
+    """Tests for team profile in LLMConfig."""
 
     def test_default_team_profile(self) -> None:
         """Test that default team profile is used when none specified."""
         config = LLMConfig()
         assert config.team_profile == DEFAULT_TEAM_PROFILE
 
-    def test_inline_team_profile(self) -> None:
-        """Test that inline team_profile is used."""
+    def test_custom_team_profile(self) -> None:
+        """Test that custom team_profile is used."""
         custom = "Custom team profile"
         config = LLMConfig(team_profile=custom)
         assert config.team_profile == custom
-
-    def test_team_profile_from_file(self, tmp_path: Path) -> None:
-        """Test loading team profile from external file."""
-        profile_content = "從檔案載入的團隊能力"
-        profile_file = tmp_path / "profile.txt"
-        profile_file.write_text(profile_content, encoding="utf-8")
-
-        config = LLMConfig(team_profile_path=str(profile_file))
-        assert config.team_profile == profile_content
-
-    def test_team_profile_file_not_found_uses_default(self) -> None:
-        """Test that missing file falls back to default."""
-        config = LLMConfig(team_profile_path="/nonexistent/path.txt")
-        assert config.team_profile == DEFAULT_TEAM_PROFILE
-
-    def test_team_profile_file_overrides_inline(self, tmp_path: Path) -> None:
-        """Test that file path takes precedence over inline profile."""
-        file_content = "File content"
-        profile_file = tmp_path / "profile.txt"
-        profile_file.write_text(file_content, encoding="utf-8")
-
-        config = LLMConfig(
-            team_profile="Inline content",
-            team_profile_path=str(profile_file),
-        )
-        assert config.team_profile == file_content
 
 
 @pytest.mark.integration

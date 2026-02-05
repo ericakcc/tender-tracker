@@ -1,9 +1,8 @@
 """LLM backend configuration models."""
 
-from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 DEFAULT_TEAM_PROFILE = """團隊核心技術能力：
 
@@ -12,7 +11,7 @@ DEFAULT_TEAM_PROFILE = """團隊核心技術能力：
 3. 資料工程與分析
 4. 系統整合
 
-請根據您的團隊能力自訂此檔案。
+請在 config.yaml 的 llm.team_profile 中自訂您的團隊能力。
 """
 
 
@@ -48,21 +47,6 @@ class LLMConfig(BaseModel):
         description="Sampling temperature (lower = more deterministic)",
     )
     team_profile: str = Field(
-        default="",
+        default=DEFAULT_TEAM_PROFILE,
         description="Team capabilities description for evaluation prompt",
     )
-    team_profile_path: str = Field(
-        default="",
-        description="Path to external file containing team profile (overrides team_profile)",
-    )
-
-    @model_validator(mode="after")
-    def load_team_profile_from_file(self) -> "LLMConfig":
-        """Load team profile from file if path is specified."""
-        if self.team_profile_path:
-            path = Path(self.team_profile_path)
-            if path.exists():
-                self.team_profile = path.read_text(encoding="utf-8").strip()
-        if not self.team_profile:
-            self.team_profile = DEFAULT_TEAM_PROFILE
-        return self
