@@ -38,7 +38,7 @@ console = Console()
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 def cli(ctx: click.Context, config_path: Path | None, db_path: Path | None, verbose: bool) -> None:
-    """Taiwan government tender tracker for Star Fusion Group."""
+    """Taiwan government tender tracker with AI-powered evaluation."""
     ctx.ensure_object(dict)
 
     if not verbose:

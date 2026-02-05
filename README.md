@@ -1,10 +1,22 @@
 # tender-tracker
 
-追蹤台灣政府標案的 CLI 工具，為光聚晶電聯合（Star Fusion Group）篩選適合投標的案件。
+追蹤台灣政府標案的 CLI 工具，透過 AI 評估標案與團隊能力的匹配度，篩選適合投標的案件。
+
+## 功能特色
+
+- 自動抓取政府電子採購網標案（mlwmlw API、ebuying 共契）
+- 關鍵字 / 機關 / 預算 / 採購類別篩選
+- **可插拔 LLM 後端**：支援本地 vLLM（開源模型）或 Claude API
+- AI 評估標案相關度，產生投標建議
+- SQLite 本地儲存，支援 CSV 匯出
 
 ## 安裝
 
 ```bash
+git clone <repo-url>
+cd tender-tracker
+cp config.yaml.example config.yaml
+# 編輯 config.yaml，填入你的 team_profile
 uv sync
 ```
 
@@ -14,19 +26,17 @@ uv sync
 
 ### config.yaml
 
-專案根目錄的 `config.yaml` 控制篩選條件：
+複製 `config.yaml.example` 為 `config.yaml`，並根據需求修改：
 
 ```yaml
 keywords:          # 關鍵字篩選（標案名稱 / 分類）
   - AI
   - 人工智慧
   - 系統開發
-  - ...
 
 orgs:              # 關注的招標機關
   - 數位發展部
   - 國防部
-  - ...
 
 budget:
   min: 150000      # 最低預算（NT$）
@@ -35,23 +45,42 @@ budget:
 procurement_types: # 採購類別
   - 勞務
 
-schedule:
-  fetch_interval: "0 9,14 * * 1-5"  # 排程（參考用）
+llm:
+  backend: vllm                      # "vllm" 或 "claude"
+  model: Qwen/Qwen3-8B-Instruct      # 模型名稱
+  api_base: http://localhost:8000/v1 # vLLM server URL
+  team_profile: |
+    貴公司核心技術能力：
+    1. AI / ML
+    2. 軟體開發
+    ...
 ```
 
-### Claude Code CLI
+### LLM 後端設定
 
-`evaluate` 指令透過 [Claude Agent SDK](https://github.com/anthropics/claude-code/tree/main/packages/agent-sdk) 執行，需要已安裝並認證 Claude Code CLI：
+#### 選項 1：vLLM（本地開源模型，推薦）
 
 ```bash
-# 安裝 Claude Code CLI（若尚未安裝）
-npm install -g @anthropic-ai/claude-code
-
-# 確認已登入（使用 Claude Code 訂閱）
-claude
+# 在有 GPU 的機器上啟動 vLLM server
+pip install vllm
+vllm serve Qwen/Qwen3-8B-Instruct --port 8000 --max-model-len 8192
 ```
 
-不需要額外設定 `ANTHROPIC_API_KEY` 環境變數。
+#### 選項 2：Claude API
+
+需要已安裝並認證 [Claude Code CLI](https://github.com/anthropics/claude-code)：
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude  # 登入
+```
+
+然後在 `config.yaml` 設定：
+```yaml
+llm:
+  backend: claude
+  model: claude-sonnet-4-5-20250929
+```
 
 ## 指令
 
@@ -69,8 +98,6 @@ uv run python -m tender_tracker [OPTIONS] COMMAND [ARGS]
 
 ### fetch — 抓取標案
 
-依日期從 [mlwmlw API](https://pcc.mlwmlw.org) 抓取標案，再用 `config.yaml` 的關鍵字篩選後存入資料庫。
-
 ```bash
 # 抓取今天的標案
 uv run python -m tender_tracker fetch
@@ -82,22 +109,13 @@ uv run python -m tender_tracker fetch --date 2026-02-01
 uv run python -m tender_tracker fetch --days 3
 ```
 
-| 選項 | 說明 |
-|------|------|
-| `--date YYYY-MM-DD` | 指定起始日期（預設：今天） |
-| `--days N` | 往前抓取天數（預設：1） |
-
 ### search — 搜尋標案
-
-用自訂關鍵字直接搜尋 mlwmlw API，結果存入資料庫。
 
 ```bash
 uv run python -m tender_tracker search "人工智慧"
 ```
 
 ### list — 列出標案
-
-列出已存入資料庫的標案。
 
 ```bash
 # 列出全部（最多 50 筆）
@@ -110,89 +128,59 @@ uv run python -m tender_tracker list --days 7 --limit 20
 uv run python -m tender_tracker list --evaluated
 ```
 
-| 選項 | 說明 |
-|------|------|
-| `--days N` | 只顯示最近 N 天 |
-| `--limit N` | 最多顯示幾筆（預設：50） |
-| `--evaluated` | 只顯示已評估的標案 |
-
 ### evaluate — AI 評估
-
-使用 Claude AI 評估尚未評估的標案，判斷是否適合投標。
 
 ```bash
 # 評估最多 10 筆（預設）
 uv run python -m tender_tracker evaluate
 
-# 評估最多 5 筆
-uv run python -m tender_tracker evaluate --limit 5
+# 評估最多 5 筆，並發 10
+uv run python -m tender_tracker evaluate --limit 5 -c 10
 ```
 
-| 選項 | 說明 |
-|------|------|
-| `--limit N` | 最多評估幾筆（預設：10） |
+### export — 匯出 CSV
 
-評估結果包含：相關度分數（0.0–1.0）、是否適合投標、建議行動（bid / skip / review_further）、匹配能力、判斷理由。
+```bash
+uv run python -m tender_tracker export -o tenders.csv
+```
 
 ### report — 統計摘要
-
-顯示資料庫中的標案統計。
 
 ```bash
 uv run python -m tender_tracker report
 ```
 
-輸出：標案總數、已評估、適合投標、待評估數量。
-
-### history — 追蹤記錄
-
-查看近 N 天的標案與評估紀錄。
-
-```bash
-# 近 30 天（預設）
-uv run python -m tender_tracker history
-
-# 近 7 天
-uv run python -m tender_tracker history --days 7
-```
-
 ## 典型工作流程
 
 ```
-fetch → list → evaluate → report
+fetch → list → evaluate → export
 ```
 
-1. **fetch** — 抓取當天標案，關鍵字篩選後存入 DB
+1. **fetch** — 抓取當天標案
 2. **list** — 瀏覽篩選結果
-3. **evaluate** — 用 AI 評估適合度
-4. **report** — 查看統計摘要
+3. **evaluate** — AI 評估適合度
+4. **export** — 匯出結果
 
 ## 專案結構
 
 ```
 tender-tracker/
-├── config.yaml                    # 篩選設定
+├── config.yaml.example            # 設定範例
 ├── pyproject.toml
 ├── src/tender_tracker/
-│   ├── __main__.py                # 進入點
-│   ├── main.py                    # CLI 指令定義（Click）
+│   ├── main.py                    # CLI 指令定義
 │   ├── models.py                  # Pydantic 資料模型
 │   ├── storage.py                 # SQLite 存取層
-│   ├── config.py                  # 設定載入
-│   ├── evaluator.py               # Claude AI 評估引擎
-│   ├── filters.py                 # 標案篩選邏輯
-│   ├── reports.py                 # Rich 終端輸出
+│   ├── evaluator.py               # AI 評估引擎
+│   ├── llm/                       # LLM 後端抽象層
+│   │   ├── base.py                # LLMBackend ABC
+│   │   ├── config.py              # LLMConfig
+│   │   ├── vllm_backend.py        # vLLM + Instructor
+│   │   └── claude_backend.py      # Claude Agent SDK
 │   └── sources/
-│       ├── base.py                # TenderSource 抽象基底
-│       ├── mlwmlw.py              # mlwmlw API（主要來源）
-│       ├── g0v.py                 # g0v API（備用）
-│       └── opendata.py            # 政府開放資料 XML
+│       ├── mlwmlw.py              # mlwmlw API
+│       └── ebuying.py             # 共契電子採購
 └── tests/
-    ├── conftest.py
-    ├── test_evaluator.py
-    ├── test_filters.py
-    ├── test_sources.py
-    └── test_storage.py
 ```
 
 ## 開發
@@ -207,3 +195,7 @@ uv run pytest --cov=src --cov-report=term-missing
 # Lint + Format
 uv run ruff check . --fix && uv run ruff format .
 ```
+
+## License
+
+MIT
