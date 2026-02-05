@@ -8,8 +8,10 @@ dependencies = [
     "claude-agent-sdk>=0.1.0",
     "click>=8.3.1",
     "httpx>=0.28.1",
+    "instructor>=1.7.0",
     "loguru>=0.7.3",
     "lxml>=6.0.2",
+    "openai>=1.50.0",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
     "rich>=14.3.2",
@@ -39,7 +41,11 @@ select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (require external services)",
+]
 
 [tool.coverage.run]
 source = ["src/tender_tracker"]

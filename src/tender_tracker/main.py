@@ -156,7 +156,8 @@ def list_tenders(ctx: click.Context, days: int | None, limit: int, evaluated: bo
 @click.option("--concurrency", "-c", type=int, default=20, help="Max parallel evaluations")
 @click.pass_context
 def evaluate(ctx: click.Context, limit: int, concurrency: int) -> None:
-    """Evaluate unevaluated tenders using Claude AI."""
+    """Evaluate unevaluated tenders using AI (vLLM or Claude)."""
+    config = ctx.obj["config"]
     storage: TenderStorage = ctx.obj["storage"]
 
     unevaluated_ids = storage.get_unevaluated_tender_ids()
@@ -168,17 +169,23 @@ def evaluate(ctx: click.Context, limit: int, concurrency: int) -> None:
     tenders = [storage.get_tender(tid) for tid in ids_to_eval]
     tenders = [t for t in tenders if t is not None]
 
-    console.print(f"[cyan]將評估 {len(tenders)} 筆標案...[/cyan]")
+    backend_name = config.llm.backend.upper()
+    model_name = config.llm.model
+    console.print(f"[cyan]將評估 {len(tenders)} 筆標案（{backend_name}: {model_name}）...[/cyan]")
 
-    evaluator = TenderEvaluator()
+    evaluator = TenderEvaluator(config=config.llm)
 
     def _save(tender: Tender, tender_eval: TenderEvaluation) -> None:
         storage.save_evaluation(tender.tender_id, tender_eval)
 
+    async def _run() -> list[tuple[Tender, TenderEvaluation]]:
+        try:
+            return await evaluator.evaluate_batch(tenders, concurrency=concurrency, on_result=_save)
+        finally:
+            await evaluator.close()
+
     with console.status(f"[bold green]平行評估中（並發 {concurrency}）..."):
-        results = asyncio.run(
-            evaluator.evaluate_batch(tenders, concurrency=concurrency, on_result=_save)
-        )
+        results = asyncio.run(_run())
 
     render_evaluation_table(results)
 

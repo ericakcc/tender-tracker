@@ -5,6 +5,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from tender_tracker.llm.config import LLMConfig
+
 DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "config.yaml"
 
 
@@ -30,6 +32,7 @@ class AppConfig(BaseModel):
     procurement_types: list[str] = Field(default_factory=lambda: ["勞務"])
     ebuying_categories: list[str] = Field(default_factory=lambda: ["226"])
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:
