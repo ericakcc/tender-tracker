@@ -12,4 +12,5 @@ tenders.db
 *.csv
 
 # Private configuration (contains company-specific info)
+config.yaml
 docs/
