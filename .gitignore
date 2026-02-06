@@ -14,3 +14,4 @@ tenders.db
 # Private configuration (contains company-specific info)
 config.yaml
 docs/
+logs/
