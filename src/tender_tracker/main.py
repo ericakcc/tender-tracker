@@ -265,11 +265,12 @@ _CSV_FIELDS = [
 )
 @click.option("--days", type=int, default=None, help="Only export tenders from last N days")
 @click.option("--evaluated", is_flag=True, help="Only export evaluated tenders")
+@click.option("--suitable", is_flag=True, help="Only export suitable tenders (suitable=1)")
 @click.pass_context
-def export(ctx: click.Context, output_path: Path, days: int | None, evaluated: bool) -> None:
+def export(ctx: click.Context, output_path: Path, days: int | None, evaluated: bool, suitable: bool) -> None:
     """Export tenders to CSV file."""
     storage: TenderStorage = ctx.obj["storage"]
-    tenders = storage.list_tenders(days=days, limit=100_000, evaluated_only=evaluated)
+    tenders = storage.list_tenders(days=days, limit=100_000, evaluated_only=evaluated, suitable_only=suitable)
 
     with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)

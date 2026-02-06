@@ -168,6 +168,7 @@ class TenderStorage:
         days: int | None = None,
         limit: int = 100,
         evaluated_only: bool = False,
+        suitable_only: bool = False,
     ) -> list[Tender]:
         """List tenders with optional filters.
 
@@ -175,6 +176,7 @@ class TenderStorage:
             days: Only return tenders fetched within this many days.
             limit: Maximum number of results.
             evaluated_only: Only return tenders that have evaluations.
+            suitable_only: Only return tenders evaluated as suitable (implies evaluated_only).
 
         Returns:
             List of matching tenders.
@@ -190,7 +192,9 @@ class TenderStorage:
             cutoff = (datetime.now() - timedelta(days=days)).isoformat()
             params.append(cutoff)
 
-        if evaluated_only:
+        if suitable_only:
+            conditions.append("tender_id IN (SELECT tender_id FROM evaluations WHERE suitable = 1)")
+        elif evaluated_only:
             conditions.append("tender_id IN (SELECT tender_id FROM evaluations)")
 
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
